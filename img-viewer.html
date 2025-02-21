@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Responsive Image</title>
+    <style>
+        body,
+        html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden;
+            /* To ensure the image doesn't cause scrollbars */
+        }
+
+        #image-container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            background-size: contain;
+            background-position: center;
+            background-repeat: no-repeat;
+        }
+
+        #imageArea {
+            border: thick double black;
+        }
+
+        #selectionBox {
+            border: 2px dashed red;
+            position: absolute;
+            pointer-events: none;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="image-container">
+        <div id="imageArea">
+            <div id="selectionBox"></div>
+        </div>
+    </div>
+</body>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+    $(function () {
+        const imgDiv = $('#image-container');
+        const selectionBox = $('#selectionBox');
+        const imgArea = $('#imageArea');
+
+        // Extracting the image URL from the current page's query parameters
+        const urlParams = new URLSearchParams(window.location.search);
+        const imageFile = urlParams.get('image');
+        const img = new Image();
+        let imgGuid;
+
+        // Encoding credentials for Basic Auth
+        const base64EncodedCredentials = btoa("Username" + ":" + "Password"); //replace this
+
+        // Fetch the image with Basic Auth header
+        fetch(imageFile, {
+            method: 'GET',
+            headers: {
+                "Authorization": "Basic " + base64EncodedCredentials
+            }
+        })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.blob();
+            })
+            .then(blob => {
+                // Create a Blob URL from the fetched blob
+                const blobUrl = URL.createObjectURL(blob);
+
+                // Use the Blob URL as the source for the image
+                img.src = blobUrl;
+                document.body.appendChild(img); // Assuming you want to add the image to the body
+
+                // If you need the GUID or filename:
+                imgGuid = imageFile.split('/').pop();
+                console.log(imgGuid); // This will log the last segment of the original image URL
+            })
+            .catch(error => console.error('There was an error!', error));
+        let imageIdJson;
+
+
+        async function getIdFromGuid(imgGuid) {
+            const url = `http://www.myapi.com/api/Images/GetIdFromGuid/${imgGuid}`; //this line can be any api
+
+            const text = "some text";
+
+            //const response = await
+            try {
+                const response = await fetch(url, {
+                    method: "GET",
+                    headers: {
+                        "Authorization": "Basic " + base64EncodedCredentials
+                    },
+                    //mode: "no-cors"
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error: ${response.status}`);
+                }
+
+                imageIdJson = await response.json();
+
+                return imageIdJson;
+            } catch (error) {
+                console.log(`error fetching: ${error}`);
+            }
+
+            //text = await response.text();
+            //const js = await response.json();
+            //responseText.textContent = text;
+            //console.log(text);
+        }
+
+
+        // Wait for the image to load before setting the background image and calling fitDivToImage()
+        img.onload = function () {
+            imgDiv.css("background-image", `url(${img.src})`);
+            fitDivToImage();
+        };
+
+        function fitDivToImage() {
+            const divAspect = imgDiv.width() / imgDiv.height();
+            const imageAspect = img.naturalWidth / img.naturalHeight;
+            if (divAspect > imageAspect) {
+                // The window is wider than the image
+                imgArea.attr('style', `width:${imageAspect * $(window).height()}px;height:100%;margin:0 auto;`);
+            } else {
+                // The image is wider than the window
+                imgArea.attr('style', `height:${$(window).width() / imageAspect}px;width:100%;margin:auto 0;`);
+            }
+        }
+
+        $(window).on('resize', function () {
+            selectionBox.css("display", "none")
+            fitDivToImage();
+        });
+
+        let selection = {
+            startX: 0,
+            startY: 0,
+            endX: 0,
+            endY: 0,
+        };
+
+        let isSelecting = false;
+
+        function updateSelectionBox() {
+            selectionBox.css({
+                left: Math.min(selection.startX, selection.endX),
+                top: Math.min(selection.startY, selection.endY),
+                width: Math.abs(selection.endX - selection.startX),
+                height: Math.abs(selection.endY - selection.startY),
+            });
+        }
+
+        function getPixelCoordinates(startX, startY, endX, endY) {
+            const boundingRect = imgArea[0].getBoundingClientRect();
+            const imageWidth = img.naturalWidth;
+            const imageHeight = img.naturalHeight;
+            const containerWidth = boundingRect.width;
+            const containerHeight = boundingRect.height;
+
+            const xRatio = imageWidth / containerWidth;
+            const yRatio = imageHeight / containerHeight;
+
+            // Calculate the margins
+            const horizontalMargin = (window.innerWidth - containerWidth) / 2;
+            const verticalMargin = (window.innerHeight - containerHeight) / 2;
+
+            // Adjust the start and end coordinates by subtracting the margins
+            startX -= horizontalMargin;
+            startY -= verticalMargin;
+            endX -= horizontalMargin;
+            endY -= verticalMargin;
+
+            const pixelStartX = Math.floor(Math.min(startX, endX) * xRatio);
+            const pixelStartY = Math.floor(Math.min(startY, endY) * yRatio);
+            const pixelWidth = Math.floor(Math.abs(endX - startX) * xRatio);
+            const pixelHeight = Math.floor(Math.abs(endY - startY) * yRatio);
+
+            return {
+                x: pixelStartX,
+                y: pixelStartY,
+                width: pixelWidth,
+                height: pixelHeight,
+            };
+        }
+
+        async function addAnomalyTag(imageId, x, y, w, h, sourceId, tagTypeId) {
+            const url = `http://www.myapi.com/api/ImageTags/Add/${imageId}`; //this line can be any api
+
+            const requestBody = {
+                x: x,
+                y: y,
+                w: w,
+                h: h,
+                sourceId: sourceId,
+                tagTypeId: tagTypeId
+            };
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        "Authorization": "Basic " + base64EncodedCredentials
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Request failed with status: ${response.status}`);
+                }
+
+                const responseData = response.text();
+                console.log('Image tag added:', responseData);
+
+                return responseData; // You can return the response data if needed
+            } catch (error) {
+                console.error('Error adding image tag:', error);
+                throw error;
+            }
+        }
+
+        $(imgArea).on('mousedown', (e) => {
+            selectionBox.css("display", "block")
+            e.preventDefault();
+            isSelecting = true;
+            selection.startX = e.clientX;
+            selection.startY = e.clientY;
+            selection.endX = e.clientX;
+            selection.endY = e.clientY;
+            updateSelectionBox();
+        });
+
+        $(imgArea).on('mousemove', (e) => {
+            e.preventDefault();
+            if (isSelecting) {
+                selection.endX = e.clientX;
+                selection.endY = e.clientY; // Account for <h1> element's height
+                updateSelectionBox();
+            }
+        });
+
+        $(imgArea).on('mouseup', (e) => {
+            e.preventDefault();
+            isSelecting = false;
+            updateSelectionBox();
+
+            const { x, y, width, height } = getPixelCoordinates(
+                selection.startX,
+                selection.startY,
+                selection.endX,
+                selection.endY
+            );
+
+            getIdFromGuid(imgGuid).then((id) => {
+                addAnomalyTag(id, x, y, width, height, 0, 8)
+            });
+
+            alert(
+                `
+Top-left corner coordinates (x, y): ${x}, ${y}
+Width: ${width} pixels
+Height: ${height} pixels`
+            )
+        });
+    });
+</script>
+
+</html>
